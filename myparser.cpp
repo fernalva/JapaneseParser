@@ -1,0 +1,652 @@
+#include<iostream>
+#include<fstream>
+#include<string>
+#include<sstream>
+#include<stdlib.h>
+using namespace std;
+
+//tables by Fernando and Blake
+enum states {q0, q0q1, q0qy, qy, qsa, qt, qs, qc}; //different possible states we have
+
+//tokenTypes and tokenName are in same order to easily switch between the two using array indexes
+//if this is changed program will probably break
+
+enum tokenTypes {EOFM, ERROR, PERIOD, WORD1, WORD2, VERB, VERBNEG,
+	VERBPAST, VERBPASTNEG, IS, WAS, SUBJECT, OBJECT, DESTINATION, PRONOUN, CONNECTOR};
+
+string tokenName[20] = {"EOFM", "ERROR", "PERIOD", "WORD1", "WORD2", "VERB", "VERBNEG",
+"VERBPAST", "VERBPASTNEG", "IS", "WAS", "SUBJECT", "OBJECT", "DESTINATION", "PRONOUN", "CONNECTOR"};
+
+//all the reserved words so we dont need a seperate file for them
+string reservedWords[20] = {"masu", "masen", "mashita", "masendeshita", "desu", "deshita", "o", "wa",
+	"ni", "watashi", "anata", "kare", "kanojo", "sore", "mata", "soshite", "shikashi", "dakara", "eofm"};
+
+//prototypes
+bool isWord(string&);
+bool isPeriod(string&);
+tokenTypes scanner(string&);
+void syntax_error1(string , tokenTypes);
+void syntax_error2(string , tokenTypes);
+tokenTypes next_token();
+bool match(tokenTypes);
+void story();
+void s();
+void afterSubject();
+void afterNoun();
+void afterObject();
+void noun();
+void verb();
+void be();
+void tense();
+
+/*
+  Driver for the scanner, opens the file input by user then
+  uses getline to scan through it, taking the line and
+  tokenizing it using a stringstream, the tokens are then
+  processed through the scanner and the type is printed
+*/
+
+//By Abdullah and Blake
+int main()
+{
+  tokenTypes ourTokenType; //Used to print the token type from the tokenName array
+  string currentWord;     //Current word we are applying the dfa to
+  string fileName;        //read in from cin
+  string line;            //The current line of the file we are reading
+  ifstream fin;           //to read file
+
+  cout << "-----------------SCANNER-------------------" << endl;  
+
+  cout << "Enter the input file name: ";  //prompt
+  cin >> fileName;
+  
+  fin.open(fileName.c_str());
+  
+  //Couldnt open file
+  if (!fin)
+    {
+      cout << "Could not open file: " << fileName;
+      return -1;
+    }
+  
+  while (currentWord != "eofm") //until eofm is read in
+    {
+      string sentence[10];    //tokenized version of line, put here to flush the array each loop
+      
+      getline(fin, line); //gets a line from a fin
+      
+      stringstream ssin(line); //turn the line into a string stream
+      int i = 0;
+      while (ssin.good() && i < 10)
+	{ //tokenize the line from getline
+	  ssin >> sentence[i];
+	  ++i;
+	}
+      for (int j = 0; j < i; j++) //goes for how many words we input into sentence[]
+	{
+	  currentWord = sentence[j]; //get the word
+	  
+	  if (currentWord != "") //make sure its not empty
+	    {
+	      ourTokenType = scanner(currentWord);//call scanner to get what type of token it is
+	      
+	      if (ourTokenType == ERROR) //check for error
+		{
+		  cout << "Lexical error: " << currentWord << " is not a valid token" << "\n\n";
+		}
+	      else //Print word and its type
+		{
+		  cout << currentWord << " is type " << tokenName[ourTokenType] << "\n\n";
+		}
+	      
+	      //break out of for loop
+	      if (ourTokenType == EOFM)
+		{
+		  break;
+		}
+	    }
+	  
+	}
+    }
+  
+  //go until eofm
+  cout << "End of file is encountered.";
+  
+  fin.close(); //close opened files
+  
+  //-----------------PARSER----------------------
+  cout << "---------------PARSER----------------" << endl;
+
+  cout << "Enter the input file name: ";
+  cin >> fileName;
+  fin.open(fileName.c_str());
+  story();
+  fin.close();
+  
+
+  return 0;
+}
+
+/*
+  DFA for words, follows the DFA made byour group (with a couple of missing transfers)
+  to properly assess if a word should be accepted or not
+  
+  returns true if it is a word accepted by the scanner
+*/
+//By Fernando and Blake
+bool isWord(string& word)
+{
+  states currentState = q0; //starting state
+  int charPos = 0; //keep track of where we are in the string
+  
+  while (word[charPos] != '\0')
+    {
+      
+      //start with final states
+      
+      //transitions out of q0
+      if (currentState == q0 && (word[charPos] == 'a' || word[charPos] == 'e' || word[charPos] == 'i' ||
+				 word[charPos] == 'o' || word[charPos] == 'u' || word[charPos] == 'I' || word[charPos] == 'E'))
+	{
+	  currentState = q0q1;
+	}
+      else if (currentState == q0 && (word[charPos] == 'b' || word[charPos] == 'g' || word[charPos] == 'h' ||
+				      word[charPos] == 'k' || word[charPos] == 'n' || word[charPos] == 'm' || word[charPos] == 'p' || word[charPos] == 'r'))
+	{
+	  currentState = qy;
+	}
+      else if (currentState == q0 && (word[charPos] == 'd' || word[charPos] == 'w' || word[charPos] == 'z'
+				      || word[charPos] == 'y' || word[charPos] == 'j'))
+	{
+	  currentState = qsa;
+	}
+      else if (currentState == q0 && word[charPos] == 't')
+	{
+	  currentState = qt;
+	}
+      
+      else if (currentState == q0 && word[charPos] == 's')
+	{
+	  currentState = qs;
+	  
+	}
+      else if (currentState == q0 && word[charPos] == 'c')
+	{
+	  currentState = qc;
+	}
+      
+      //transitions out of q0q1
+      else if (currentState == q0q1 && (word[charPos] == 'a' || word[charPos] == 'e' || word[charPos] == 'i' ||
+					word[charPos] == 'o' || word[charPos] == 'u' || word[charPos] == 'I' || word[charPos] == 'E'))
+	{
+	  //loop back into q0q1 so dont update state
+	}
+      else if (currentState == q0q1 && (word[charPos] == 'b' || word[charPos] == 'm' || word[charPos] == 'k' ||
+					word[charPos] == 'h' || word[charPos] == 'p' || word[charPos] == 'r' || word[charPos] == 'g'))
+	{
+	  currentState = qy;
+	}
+      else if (currentState == q0q1 && (word[charPos] == 'd' || word[charPos] == 'w' || word[charPos] == 'z' ||
+					word[charPos] == 'y' || word[charPos] == 'j'))
+	{
+	  currentState = qsa;
+	}
+      else if (currentState == q0q1 && word[charPos] == 't')
+	{
+	  currentState = qt;
+	}
+      else if (currentState == q0q1 && word[charPos] == 'n')
+	{
+	  currentState = q0qy;
+	}
+      else if (currentState == q0q1 && word[charPos] == 's')
+	{
+	  currentState = qs;
+	}
+      else if (currentState == q0q1 && word[charPos] == 'c')
+	{
+	  currentState = qc;
+	}
+      
+      //transitions out of q0qy
+      else if (currentState == q0qy && (word[charPos] == 'a' || word[charPos] == 'e' || word[charPos] == 'i' ||
+					word[charPos] == 'o' || word[charPos] == 'u' || word[charPos] == 'I' || word[charPos] == 'E'))
+	{
+	  currentState = q0q1;
+	}
+      else if (currentState == q0qy && (word[charPos] == 'b' || word[charPos] == 'm' || word[charPos] == 'k' ||
+					word[charPos] == 'n' || word[charPos] == 'h' || word[charPos] == 'p' || word[charPos] == 'r' || word[charPos] == 'g'))
+	{
+	  currentState = qy;
+	}
+      else if (currentState == q0qy && (word[charPos] == 'd' || word[charPos] == 'w' || word[charPos] == 'z' ||
+					word[charPos] == 'y' || word[charPos] == 'j'))
+	{
+	  currentState = qsa;
+	}
+      else if (currentState == q0qy && word[charPos] == 't')
+	{
+	  currentState = qt;
+	}
+      else if (currentState == q0qy && word[charPos] == 's')
+	{
+	  currentState = qs;
+	}
+      else if (currentState == q0qy && word[charPos] == 'c')
+	{
+	  currentState = qc;
+	}
+      //end of final states
+      
+      
+      //scraps of whats left
+      
+      //stuff to get into q0q1
+      else if (currentState == qy && (word[charPos] == 'a' || word[charPos] == 'e' || word[charPos] == 'i' ||
+				      word[charPos] == 'o' || word[charPos] == 'u' || word[charPos] == 'I' || word[charPos] == 'E'))
+	{
+	  currentState = q0q1;
+	}
+      else if (currentState == qsa && (word[charPos] == 'a' || word[charPos] == 'e' || word[charPos] == 'i' ||
+				       word[charPos] == 'o' || word[charPos] == 'u' || word[charPos] == 'I' || word[charPos] == 'E'))
+	{
+	  currentState = q0q1;
+	}
+      else if (currentState == qt && (word[charPos] == 'a' || word[charPos] == 'e' || word[charPos] == 'i' ||
+				      word[charPos] == 'o' || word[charPos] == 'u' || word[charPos] == 'I' || word[charPos] == 'E'))
+	{
+	  currentState = q0q1;
+	}
+      else if (currentState == qs && (word[charPos] == 'a' || word[charPos] == 'e' || word[charPos] == 'i' ||
+				      word[charPos] == 'o' || word[charPos] == 'u' || word[charPos] == 'I' || word[charPos] == 'E'))
+	{
+	  currentState = q0q1;
+	}
+      
+      //stuff to get into qsa
+      else if (currentState == qy && word[charPos] == 'y')
+	{
+	  currentState = qsa;
+	}
+      else if (currentState == qs && word[charPos] == 'h')
+	{
+	  currentState = qsa;
+	}
+      else if (currentState == qt && word[charPos] == 's')
+	{
+	  currentState = qsa;
+	}
+      else if (currentState == qc && word[charPos] == 'h')
+	{
+	  currentState = qsa;
+	}
+      //if none of the above then theres an invalid char or state
+      else
+	{
+	  return false;
+	}
+      //continue in string
+      charPos++;
+    }
+  
+  //check if were in a final state
+  if (currentState == q0 || currentState == q0q1 || currentState == q0qy)
+    {
+      return true;
+    }
+  else
+    {
+      return false;
+    }  
+}
+
+//Returns if its a period or not
+//By Fernando and Blake
+bool isPeriod(string& word)
+{
+  return (word == ".");
+}
+
+/*
+* Uses the DFAs to determine if we should accept a word and
+* if we do, what type of word it is
+*/
+//By Abdullah and Blake
+tokenTypes scanner(string& word)
+{
+  states currentState = q0;
+  int tokenNumber = -1; //invalid state at the start
+  
+  if (word == "eofm") //if we reached the end, return it
+    {
+      return EOFM;
+    }
+  else if (isPeriod(word)) //get the easy case out of the way first
+    {
+      return PERIOD; //return its a period
+    }
+  else if (isWord(word)) //check if its a word
+    {
+      for (int i = 0; i < 16; i++)
+	{
+	  if (word == reservedWords[i])
+	    {
+	      tokenNumber = i; //set tokenNumber to the index of reserved words
+	    }
+	}
+      
+      if (tokenNumber == -1) //word wasnt in reservedWords so we return its a word
+	{
+	  if (word.back() == 'I' || word.back() == 'E') //Check if the last char is an I or E
+	    {
+	      return WORD2;
+	    }
+	  else
+	    {
+	      return WORD1;
+	    }
+	}
+      else //its either a reserved word or an error at this point
+	{
+	  switch (tokenNumber) //switch to the correct tokenType
+	    {
+	    case 0:
+	      return VERB;
+	      break;
+	      
+	    case 1:
+	      return VERBNEG;
+	      break;
+	      
+	    case 2:
+	      return VERBPAST;
+	      break;
+	      
+	    case 3:
+	      return VERBPASTNEG;
+	      break;
+	      
+	    case 4:
+	      return IS;
+	      break;
+	      
+	    case 5:
+	      return WAS;
+	      break;
+	      
+	    case 6:
+	      return OBJECT;
+	      break;
+	      
+	    case 7:
+	      return SUBJECT;
+	      break;
+	      
+	    case 8:
+	      return DESTINATION;
+	      break;
+	      
+	    case 9: case 10: case 11: case 12: case 13:
+	      return PRONOUN;
+	      break;
+	      
+	    case 14: case 15: case 16: case 17:
+	      return CONNECTOR;
+	      break;
+	      
+	    default:
+	      return ERROR; //if it was a word but none of the types we found an error
+	      break;
+	    }
+	}
+    }
+  
+  return ERROR; //couldn't go through isWord() so its of type error
+}
+
+/* INSTRUCTION:  Complete all ** parts.
+   You may use any method to connect this file to scanner.cpp
+   that you had written.  
+   e.g. You can copy scanner.cpp here by:
+     cp ../ScannerFiles/scanner.cpp .  
+       and then append the two files into one: 
+          cat scanner.cpp parser.cpp > myparser.cpp
+*/
+
+//=================================================
+// File parser.cpp written by Group Number: **
+//=================================================
+
+// ----- Four Utility Functions and Globals -----------------------------------
+tokenTypes saved_token;
+string saved_lexeme;
+bool token_available = false;
+
+
+// ** Need syntaxerror1 and syntaxerror2 functions (each takes 2 args)
+//    to display syntax error messages as specified by me.  
+
+// Type of error: **
+// Done by: ** 
+void syntax_error1(string saved_lexeme, tokenTypes token_type)
+{
+  cout << "SYNTAX ERROR: expected " << token_type << " but found " << saved_lexeme;
+  exit(1);
+}
+// Type of error: **
+// Done by: **
+void syntax_error2(string saved_lexeme, tokenTypes expected)
+{
+  cout << "SYNTAX ERROR: unexpected " << saved_lexeme << " found in " << expected;
+  exit(1);
+}
+
+// ** Need the updated match and next_token with 2 global vars
+// saved_token and saved_lexeme
+
+// Purpose: looks ahead to see what token comes next from scanner
+// Done by: Fernando
+tokenTypes next_token()
+{
+  string saved_lexeme;
+  if (!token_available)   // if there is no saved token yet
+    { 
+      saved_token = scanner(saved_lexeme);  // call scanner to grab a new token
+      token_available = true;              // mark that fact that you have saved it
+      
+      cout << "Scanner called using word: " << saved_lexeme << endl;
+
+      if (saved_token == ERROR)
+	{ 
+	  syntax_error1(saved_lexeme, saved_token);
+	}
+    }
+  return saved_token;    // return the saved token
+}
+
+// Purpose: Checks and eats up the expected token
+// Done by: **
+bool match(tokenTypes expected) 
+{
+  if (next_token() != expected)   // mismatch has occurred with the next token
+    {
+      // calls a syntax error function here to generate a syntax error message here and do recovery
+      syntax_error2(saved_lexeme, expected);
+    }
+  else  // match has occurred
+    {
+      cout << "Matched " << expected << endl;
+      token_available = false;   // eat up the token
+      return true;               // say there was a match
+    }
+}
+  
+// ----- RDP functions - one per non-term -------------------
+
+// ** Make each non-terminal into a function here
+// ** Be sure to put the corresponding grammar rule above each function
+// ** Be sure to put the name of the programmer above each function
+
+// Grammar: **
+// Done by: **
+void story()
+{
+  cout << "Processing <story>" << endl;
+
+  s();
+  if(next_token() == CONNECTOR || next_token() == WORD1 || next_token() == PRONOUN)
+    {
+      s();
+    }
+}
+
+// Grammar: **
+// Done by: **
+void s()
+{
+  cout << "Processing <s>" << endl;
+
+  if(next_token() == CONNECTOR)
+    {
+      match(CONNECTOR);
+    }
+  noun();
+  match(SUBJECT);
+  afterSubject();
+}
+
+// Grammar: **
+// Done by: **
+void afterSubject()
+{
+  cout << "Processing <afterSubject>" << endl;
+
+  if(next_token() == WORD2)
+    {
+      verb();
+      tense();
+      match(PERIOD);
+    }
+  else if(next_token() == WORD1 || next_token() == PRONOUN)
+    {
+      noun();
+      afterNoun();
+    }
+}
+
+// Grammar: **
+// Done by: **
+void afterNoun()
+{
+  cout << "Processing <afterNoun>" << endl;
+
+  if(next_token() == IS || next_token() == WAS)
+    {
+      be();
+      match(PERIOD);
+    }
+  else if(next_token() == DESTINATION)
+    {
+      match(DESTINATION);
+      verb();
+      tense();
+      match(PERIOD);
+    }
+  else if(next_token() == OBJECT)
+    {
+      match(OBJECT);
+      afterObject();
+    }
+}
+
+// Grammar: **
+// Done by: **
+void afterObject()
+{
+  cout << "Processing <afterObject>" << endl;
+
+  if(next_token() == WORD1 || next_token() == PRONOUN)
+    {
+      noun();
+      match(DESTINATION);
+    }
+  verb();
+  tense();
+  match(PERIOD);
+}
+
+// Grammar: **
+// Done by: **
+void noun()
+{
+  cout << "Processing <noun>" << endl;
+
+  switch(next_token())
+    {
+    case WORD1:
+      match(WORD1);
+      break;
+    case PRONOUN:
+      match(PRONOUN);
+      break;
+    default:
+      cout << "Parsing Error";
+      exit(1);
+    }
+}
+
+// Grammar: **
+// Done by: **
+void verb()
+{
+  cout << "Processing <verb>" << endl;
+
+  match(WORD2);
+}
+
+// Grammar: **
+// Done by: **
+void be()
+{
+  cout << "Processing <be>" << endl;
+
+  switch(next_token())
+    {
+    case IS:
+      match(IS);
+      break;
+    case WAS:
+      match(WAS);
+      break;
+    default:
+      cout << "Parsing Error";
+      exit(1);
+    }
+}
+
+// Grammar: **
+// Done by: **
+void tense()
+{
+  cout << "Processing <tense>" << endl;
+
+  switch(next_token())
+    {
+    case VERBPAST:
+      match(VERBPAST);
+      break;
+    case VERBPASTNEG:
+      match(VERBPASTNEG);
+      break;
+    case VERB:
+      match(VERB);
+      break;
+    case VERBNEG:
+      match(VERBNEG);
+      break;
+    default:
+      cout << "Parsing Error";
+      exit(1);
+    }
+}
+
